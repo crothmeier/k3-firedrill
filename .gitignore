@@ -1,0 +1,13 @@
+firedrill.conf
+firedrill.denylist
+.DS_Store
+.firedrill/
+runs/
+keys/
+*.pem
+*.key
+id_*
+__pycache__/
+*.pyc
+.ruff_cache/
+*.zip

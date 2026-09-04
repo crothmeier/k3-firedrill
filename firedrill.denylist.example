@@ -1,0 +1,4 @@
+# Copy this file to firedrill.denylist and add one exact IP address or hostname per
+# line. The harness aborts if any configured hypervisor, gateway, or guest target
+# matches. Keep this committed example empty so it contains no site information.
+

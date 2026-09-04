@@ -1,0 +1,5 @@
+source: k3-firedrill 11748cc
+cut   : 2026-09-04T23:19:40Z
+lines scrubbed: 16
+gates: identity=0 hex64=0 k10=0
+allowlist64: e8e2170d8d83...

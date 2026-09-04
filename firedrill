@@ -1,0 +1,150 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+exec 7>&2
+
+FD_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+FD_PYTHON=${PYTHON:-python3}
+export PYTHONPATH="$FD_ROOT/py${PYTHONPATH:+:$PYTHONPATH}"
+FD_TEMP_FILES=()
+# evidence_exec in lib/evidence.sh consumes this cross-file sequence counter.
+# shellcheck disable=SC2034
+FD_EVIDENCE_SEQUENCE=0
+FD_EVIDENCE_IN_FLIGHT=false
+FD_EVIDENCE_IN_FLIGHT_LABEL=
+FD_EVIDENCE_IN_FLIGHT_NODE=
+FD_EVIDENCE_IN_FLIGHT_STDOUT=
+FD_EVIDENCE_IN_FLIGHT_STDERR=
+FD_EVIDENCE_IN_FLIGHT_STARTED_AT=
+FD_EVIDENCE_IN_FLIGHT_COMMAND=()
+
+cleanup() {
+    local status=$?
+    local shell_death=false
+    if [[ $FD_EVIDENCE_IN_FLIGHT == true ]]; then
+        shell_death=true
+        # Bash 3.2 can report 0 here for a fatal nounset expansion under the
+        # inherited ERR trap. An in-flight command cannot be a clean exit.
+        ((status != 0)) || status=1
+        if evidence_cleanup_in_flight "$status"; then
+            :
+        else
+            :
+        fi
+    fi
+    if ((${#FD_TEMP_FILES[@]} > 0)); then
+        rm -f -- "${FD_TEMP_FILES[@]}"
+    fi
+    if [[ $shell_death == true ]]; then
+        trap - EXIT
+        exit "$status"
+    fi
+}
+
+on_error() {
+    local status=$?
+    local line=${BASH_LINENO[0]:-unknown}
+    printf 'firedrill: command failed at line %s with exit status %s\n' "$line" "$status" >&2
+    exit "$status"
+}
+
+trap cleanup EXIT
+trap on_error ERR
+
+# shellcheck source=lib/config.sh
+source "$FD_ROOT/lib/config.sh"
+# shellcheck source=lib/evidence.sh
+source "$FD_ROOT/lib/evidence.sh"
+# shellcheck source=lib/state.sh
+source "$FD_ROOT/lib/state.sh"
+# shellcheck source=lib/safety.sh
+source "$FD_ROOT/lib/safety.sh"
+# shellcheck source=lib/nodes.sh
+source "$FD_ROOT/lib/nodes.sh"
+# shellcheck source=lib/drivers/interface.sh
+source "$FD_ROOT/lib/drivers/interface.sh"
+# shellcheck source=lib/commands/preflight.sh
+source "$FD_ROOT/lib/commands/preflight.sh"
+# shellcheck source=lib/commands/provision.sh
+source "$FD_ROOT/lib/commands/provision.sh"
+# shellcheck source=lib/commands/baseline.sh
+source "$FD_ROOT/lib/commands/baseline.sh"
+# shellcheck source=lib/commands/rollback.sh
+source "$FD_ROOT/lib/commands/rollback.sh"
+# shellcheck source=lib/commands/test_a.sh
+source "$FD_ROOT/lib/commands/test_a.sh"
+# shellcheck source=lib/commands/test_b.sh
+source "$FD_ROOT/lib/commands/test_b.sh"
+# shellcheck source=lib/commands/test_c.sh
+source "$FD_ROOT/lib/commands/test_c.sh"
+# shellcheck source=lib/commands/report.sh
+source "$FD_ROOT/lib/commands/report.sh"
+# shellcheck source=lib/commands/destroy.sh
+source "$FD_ROOT/lib/commands/destroy.sh"
+
+usage() {
+    cat <<'EOF'
+Usage: ./firedrill [--config PATH] COMMAND [OPTIONS]
+
+Commands:
+  preflight
+  provision
+  baseline
+  rollback
+  test-a
+  test-b
+  test-c
+  test-all
+  report
+  destroy --confirm LAB_ID
+EOF
+}
+
+config_path=${FIREDRILL_CONFIG:-$FD_ROOT/firedrill.conf}
+if [[ ${1:-} == --config ]]; then
+    if (($# < 3)); then
+        usage >&2
+        exit 64
+    fi
+    config_path=$2
+    shift 2
+fi
+command=${1:-}
+if [[ -z $command ]]; then
+    usage >&2
+    exit 64
+fi
+shift
+if [[ $command == help || $command == -h || $command == --help ]]; then
+    usage
+    exit 0
+fi
+config_prepare "$config_path"
+
+case $command in
+    preflight) command_preflight "$@" ;;
+    provision) command_provision "$@" ;;
+    baseline) command_baseline "$@" ;;
+    rollback) command_rollback "$@" ;;
+    report) command_report "$@" ;;
+    destroy)
+        if [[ ${1:-} != --confirm || -z ${2:-} || $# -ne 2 ]]; then
+            state_load_current
+            printf 'refusing destroy: usage: ./firedrill destroy --confirm %s\n' \
+                "$FD_LAB_ID" >&2
+            exit 64
+        fi
+        command_destroy "$2"
+        ;;
+    test-a) command_test_a "$@" ;;
+    test-b) command_test_b "$@" ;;
+    test-c) command_test_c "$@" ;;
+    test-all)
+        printf '%s is intentionally not implemented in the current mock increment\n' "$command" >&2
+        exit 69
+        ;;
+    *)
+        printf 'unknown command: %s\n' "$command" >&2
+        usage >&2
+        exit 64
+        ;;
+esac

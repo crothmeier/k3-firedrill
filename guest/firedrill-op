@@ -1,0 +1,778 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+FD_OP_CONFIG_PATH=${FIREDRILL_OP_CONFIG_PATH:-/etc/firedrill/op.env}
+FD_OP_EXPECTED_UID=0
+if [[ ${FIREDRILL_OP_TESTING:-0} == 1 ]]; then
+    FD_OP_EXPECTED_UID=${FIREDRILL_OP_TEST_UID:-0}
+fi
+
+FD_OP_NODE_NAME=
+FD_OP_NODE_ROLE=
+FD_OP_CLUSTER_NODE_ROLES=
+FD_OP_JOIN_DIGEST=
+FD_OP_JOIN_FILE=
+FD_OP_K3S_VERSION=
+FD_OP_READY_TIMEOUT=
+FD_OP_K3S_ARTIFACT=
+FD_OP_K3S_SHA256=
+FD_OP_INSTALL_ARTIFACT=
+FD_OP_INSTALL_SHA256=
+FD_OP_ETCDCTL_ARTIFACT=
+FD_OP_ETCDCTL_SHA256=
+FD_OP_K3S_INSTALLED=
+FD_OP_KUBECONFIG=
+FD_OP_AGENT_KUBECONFIG=
+FD_OP_SERVER_CA=
+FD_OP_SERVER_TOKEN=
+FD_OP_SERVER_ENV=
+FD_OP_AGENT_ENV=
+FD_OP_SERVER_UNIT=
+FD_OP_AGENT_UNIT=
+FD_OP_ETCD_ENDPOINT=
+FD_OP_ETCD_CA=
+FD_OP_ETCD_CERT=
+FD_OP_ETCD_KEY=
+FD_OP_ETCD_SNAPSHOT_DIR=
+
+fd_error() {
+    printf 'firedrill-op: %s\n' "$1" >&2
+}
+
+fd_positive_integer() {
+    local label=$1 value=$2
+    if [[ ! $value =~ ^[0-9]+$ ]] || ((value < 1)); then
+        fd_error "$label must be a positive integer"
+        return 69
+    fi
+}
+
+fd_stat_mode() {
+    stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1" 2>/dev/null
+}
+
+fd_stat_uid() {
+    stat -c '%u' "$1" 2>/dev/null || stat -f '%u' "$1" 2>/dev/null
+}
+
+fd_require_secure_file() {
+    local path=$1 label=$2 mode uid
+    if [[ ! -f $path || -L $path ]]; then
+        fd_error "$label is missing or is not one regular non-symlink file"
+        return 69
+    fi
+    mode=$(fd_stat_mode "$path") || {
+        fd_error "$label mode could not be observed"
+        return 69
+    }
+    uid=$(fd_stat_uid "$path") || {
+        fd_error "$label owner could not be observed"
+        return 69
+    }
+    if [[ $mode != 600 || $uid != "$FD_OP_EXPECTED_UID" ]]; then
+        fd_error "$label must be owned by uid $FD_OP_EXPECTED_UID with mode 0600"
+        return 69
+    fi
+}
+
+fd_assign_config() {
+    local key=$1 value=$2
+    case $key in
+        node_name) FD_OP_NODE_NAME=$value ;;
+        node_role) FD_OP_NODE_ROLE=$value ;;
+        cluster_node_roles) FD_OP_CLUSTER_NODE_ROLES=$value ;;
+        join_credential_sha256) FD_OP_JOIN_DIGEST=$value ;;
+        guest_join_file) FD_OP_JOIN_FILE=$value ;;
+        k3s_version) FD_OP_K3S_VERSION=$value ;;
+        node_ready_timeout_seconds) FD_OP_READY_TIMEOUT=$value ;;
+        k3s_binary_artifact_path) FD_OP_K3S_ARTIFACT=$value ;;
+        k3s_binary_sha256) FD_OP_K3S_SHA256=$value ;;
+        k3s_install_script_artifact_path) FD_OP_INSTALL_ARTIFACT=$value ;;
+        k3s_install_script_sha256) FD_OP_INSTALL_SHA256=$value ;;
+        etcdctl_artifact_path) FD_OP_ETCDCTL_ARTIFACT=$value ;;
+        etcdctl_sha256) FD_OP_ETCDCTL_SHA256=$value ;;
+        k3s_installed_binary_path) FD_OP_K3S_INSTALLED=$value ;;
+        k3s_kubeconfig_path) FD_OP_KUBECONFIG=$value ;;
+        k3s_agent_kubeconfig_path) FD_OP_AGENT_KUBECONFIG=$value ;;
+        k3s_server_ca_path) FD_OP_SERVER_CA=$value ;;
+        k3s_server_token_path) FD_OP_SERVER_TOKEN=$value ;;
+        k3s_server_service_env_path) FD_OP_SERVER_ENV=$value ;;
+        k3s_agent_service_env_path) FD_OP_AGENT_ENV=$value ;;
+        k3s_server_systemd_unit) FD_OP_SERVER_UNIT=$value ;;
+        k3s_agent_systemd_unit) FD_OP_AGENT_UNIT=$value ;;
+        k3s_etcd_endpoint) FD_OP_ETCD_ENDPOINT=$value ;;
+        k3s_etcd_ca_path) FD_OP_ETCD_CA=$value ;;
+        k3s_etcd_client_cert_path) FD_OP_ETCD_CERT=$value ;;
+        k3s_etcd_client_key_path) FD_OP_ETCD_KEY=$value ;;
+        k3s_etcd_snapshot_dir) FD_OP_ETCD_SNAPSHOT_DIR=$value ;;
+        *)
+            fd_error "runtime configuration contains unknown key $key"
+            return 69
+            ;;
+    esac
+}
+
+fd_read_config() {
+    local raw key value seen required variable
+    fd_require_secure_file "$FD_OP_CONFIG_PATH" 'runtime configuration' || return $?
+    seen='|'
+    while IFS= read -r raw || [[ -n $raw ]]; do
+        [[ -n $raw && $raw != '#'* ]] || continue
+        if [[ $raw != *=* ]]; then
+            fd_error 'runtime configuration requires literal key=value lines'
+            return 69
+        fi
+        key=${raw%%=*}
+        value=${raw#*=}
+        if [[ ! $key =~ ^[a-z][a-z0-9_]*$ || -z $value ]]; then
+            fd_error 'runtime configuration contains an invalid or empty assignment'
+            return 69
+        fi
+        if [[ $seen == *"|$key|"* ]]; then
+            fd_error "runtime configuration contains duplicate key $key"
+            return 69
+        fi
+        fd_assign_config "$key" "$value" || return $?
+        seen+="$key|"
+    done <"$FD_OP_CONFIG_PATH"
+
+    required='FD_OP_NODE_NAME FD_OP_NODE_ROLE FD_OP_CLUSTER_NODE_ROLES FD_OP_JOIN_DIGEST FD_OP_JOIN_FILE
+FD_OP_K3S_VERSION FD_OP_READY_TIMEOUT FD_OP_K3S_ARTIFACT FD_OP_K3S_SHA256
+FD_OP_INSTALL_ARTIFACT FD_OP_INSTALL_SHA256 FD_OP_ETCDCTL_ARTIFACT
+FD_OP_ETCDCTL_SHA256 FD_OP_K3S_INSTALLED FD_OP_KUBECONFIG FD_OP_AGENT_KUBECONFIG
+FD_OP_SERVER_CA
+FD_OP_SERVER_TOKEN FD_OP_SERVER_ENV FD_OP_AGENT_ENV FD_OP_SERVER_UNIT
+FD_OP_AGENT_UNIT FD_OP_ETCD_ENDPOINT FD_OP_ETCD_CA FD_OP_ETCD_CERT
+FD_OP_ETCD_KEY FD_OP_ETCD_SNAPSHOT_DIR'
+    for variable in $required; do
+        if [[ -z ${!variable} ]]; then
+            fd_error "runtime configuration is missing ${variable#FD_OP_}"
+            return 69
+        fi
+    done
+    : "$FD_OP_SERVER_ENV"
+    if [[ ! $FD_OP_JOIN_DIGEST =~ ^[a-f0-9]{64}$ ]]; then
+        fd_error 'runtime join-credential digest must be 64 lowercase hex characters'
+        return 69
+    fi
+    fd_positive_integer node_ready_timeout_seconds "$FD_OP_READY_TIMEOUT"
+}
+
+fd_hash_placeholder() {
+    case $1 in
+        ''|CHANGEME|changeme|REPLACE_ME|replace_me|TODO|todo|UNSET|unset|*'<'*|*'>'*)
+            return 0
+            ;;
+        *) return 1 ;;
+    esac
+}
+
+fd_sha256_stream() {
+    local output digest
+    if command -v shasum >/dev/null 2>&1; then
+        output=$(shasum -a 256) || return $?
+    elif command -v sha256sum >/dev/null 2>&1; then
+        output=$(sha256sum) || return $?
+    else
+        fd_error 'no SHA-256 implementation is available'
+        return 69
+    fi
+    digest=${output%%[[:space:]]*}
+    if [[ ! $digest =~ ^[a-f0-9]{64}$ ]]; then
+        fd_error 'SHA-256 implementation returned an invalid digest'
+        return 69
+    fi
+    printf '%s\n' "$digest"
+}
+
+fd_sha256_file() {
+    local path=$1 output digest
+    if command -v shasum >/dev/null 2>&1; then
+        output=$(shasum -a 256 "$path") || return $?
+    elif command -v sha256sum >/dev/null 2>&1; then
+        output=$(sha256sum "$path") || return $?
+    else
+        fd_error 'no SHA-256 implementation is available'
+        return 69
+    fi
+    digest=${output%%[[:space:]]*}
+    if [[ ! $digest =~ ^[a-f0-9]{64}$ ]]; then
+        fd_error 'SHA-256 implementation returned an invalid digest'
+        return 69
+    fi
+    printf '%s\n' "$digest"
+}
+
+fd_verify_artifact() {
+    local path=$1 expected=$2 label=$3 expected_mode=$4 observed mode uid
+    if fd_hash_placeholder "$expected" || [[ ! $expected =~ ^[a-f0-9]{64}$ ]]; then
+        fd_error "$label SHA-256 pin is missing, malformed, or a placeholder"
+        return 69
+    fi
+    if [[ ! -f $path || -L $path ]]; then
+        fd_error "$label artifact is absent or is not one regular non-symlink file"
+        return 69
+    fi
+    mode=$(fd_stat_mode "$path") || return $?
+    uid=$(fd_stat_uid "$path") || return $?
+    if [[ $mode != "$expected_mode" || $uid != "$FD_OP_EXPECTED_UID" ]]; then
+        fd_error "$label artifact has unexpected ownership or mode"
+        return 69
+    fi
+    observed=$(fd_sha256_file "$path") || return $?
+    if [[ $observed != "$expected" ]]; then
+        fd_error "$label artifact SHA-256 mismatch"
+        return 69
+    fi
+}
+
+fd_verify_staged_set() {
+    fd_verify_artifact "$FD_OP_K3S_ARTIFACT" "$FD_OP_K3S_SHA256" \
+        'K3s binary' 755 || return $?
+    fd_verify_artifact "$FD_OP_INSTALL_ARTIFACT" "$FD_OP_INSTALL_SHA256" \
+        'K3s install script' 755 || return $?
+    fd_verify_artifact "$FD_OP_ETCDCTL_ARTIFACT" "$FD_OP_ETCDCTL_SHA256" \
+        etcdctl 755
+}
+
+fd_read_join_file() {
+    local raw key value seen
+    FD_OP_SERVER_ENDPOINT=
+    FD_OP_JOIN_CREDENTIAL=
+    fd_require_secure_file "$FD_OP_JOIN_FILE" 'join file' || return $?
+    seen='|'
+    while IFS= read -r raw || [[ -n $raw ]]; do
+        if [[ $raw != *=* ]]; then
+            fd_error 'join file requires literal key=value lines'
+            return 69
+        fi
+        key=${raw%%=*}
+        value=${raw#*=}
+        if [[ $seen == *"|$key|"* || -z $value ]]; then
+            fd_error 'join file contains a duplicate or empty assignment'
+            return 69
+        fi
+        case $key in
+            server_endpoint) FD_OP_SERVER_ENDPOINT=$value ;;
+            join_credential) FD_OP_JOIN_CREDENTIAL=$value ;;
+            *)
+                fd_error 'join file contains an unknown key'
+                return 69
+                ;;
+        esac
+        seen+="$key|"
+    done <"$FD_OP_JOIN_FILE"
+    if [[ ! $FD_OP_SERVER_ENDPOINT =~ ^https://[0-9.]+:[0-9]+$ ]]; then
+        fd_error 'join file server endpoint has an invalid shape'
+        return 69
+    fi
+    if [[ -z $FD_OP_JOIN_CREDENTIAL || $FD_OP_JOIN_CREDENTIAL == *[[:space:]]* ]]; then
+        fd_error 'join file credential is empty or contains whitespace'
+        return 69
+    fi
+}
+
+fd_install_k3s() {
+    local role=$1 version=$2 install_dir exec_value status label_a label_b node_labels
+    case $role in
+        server-cluster-init|server-join|agent) ;;
+        *)
+            fd_error 'install-k3s role is unknown'
+            return 64
+            ;;
+    esac
+    if [[ $role != "$FD_OP_NODE_ROLE" ]]; then
+        fd_error 'install-k3s role differs from the node runtime configuration'
+        return 69
+    fi
+    if [[ $version != "$FD_OP_K3S_VERSION" ]]; then
+        fd_error 'install-k3s version differs from the pinned runtime configuration'
+        return 69
+    fi
+    fd_read_join_file || return $?
+    fd_verify_staged_set || return $?
+    install_dir=${FD_OP_K3S_INSTALLED%/*}
+    if [[ -z $install_dir || ! -d $install_dir ]]; then
+        fd_error 'configured K3s installation directory is absent'
+        return 69
+    fi
+    cp "$FD_OP_K3S_ARTIFACT" "$FD_OP_K3S_INSTALLED" || return $?
+    chmod 0755 "$FD_OP_K3S_INSTALLED" || return $?
+    fd_verify_artifact "$FD_OP_K3S_INSTALLED" "$FD_OP_K3S_SHA256" \
+        'installed K3s binary' 755 || return $?
+    label_a=${FD_OP_JOIN_DIGEST:0:32}
+    label_b=${FD_OP_JOIN_DIGEST:32:32}
+    node_labels="--node-label firedrill.internal/join-sha256-a=$label_a"
+    node_labels+=" --node-label firedrill.internal/join-sha256-b=$label_b"
+
+    case $role in
+        server-cluster-init)
+            exec_value="server --cluster-init --node-name $FD_OP_NODE_NAME $node_labels"
+            if INSTALL_K3S_SKIP_DOWNLOAD=true \
+                INSTALL_K3S_BIN_DIR_READ_ONLY=true \
+                INSTALL_K3S_BIN_DIR="$install_dir" \
+                INSTALL_K3S_VERSION="$version" \
+                INSTALL_K3S_EXEC="$exec_value" \
+                K3S_TOKEN="$FD_OP_JOIN_CREDENTIAL" \
+                sh "$FD_OP_INSTALL_ARTIFACT"; then
+                status=0
+            else
+                status=$?
+            fi
+            ;;
+        server-join)
+            exec_value="server --node-name $FD_OP_NODE_NAME $node_labels"
+            if INSTALL_K3S_SKIP_DOWNLOAD=true \
+                INSTALL_K3S_BIN_DIR_READ_ONLY=true \
+                INSTALL_K3S_BIN_DIR="$install_dir" \
+                INSTALL_K3S_VERSION="$version" \
+                INSTALL_K3S_EXEC="$exec_value" \
+                K3S_URL="$FD_OP_SERVER_ENDPOINT" \
+                K3S_TOKEN="$FD_OP_JOIN_CREDENTIAL" \
+                sh "$FD_OP_INSTALL_ARTIFACT"; then
+                status=0
+            else
+                status=$?
+            fi
+            ;;
+        agent)
+            exec_value="agent --node-name $FD_OP_NODE_NAME $node_labels"
+            if INSTALL_K3S_SKIP_DOWNLOAD=true \
+                INSTALL_K3S_BIN_DIR_READ_ONLY=true \
+                INSTALL_K3S_BIN_DIR="$install_dir" \
+                INSTALL_K3S_VERSION="$version" \
+                INSTALL_K3S_EXEC="$exec_value" \
+                K3S_URL="$FD_OP_SERVER_ENDPOINT" \
+                K3S_TOKEN="$FD_OP_JOIN_CREDENTIAL" \
+                sh "$FD_OP_INSTALL_ARTIFACT"; then
+                status=0
+            else
+                status=$?
+            fi
+            ;;
+    esac
+    unset FD_OP_JOIN_CREDENTIAL FD_OP_SERVER_ENDPOINT
+    if ((status != 0)); then
+        fd_error 'pinned offline K3s installation failed'
+        return "$status"
+    fi
+    printf 'installed %s %s\n' "$role" "$version"
+}
+
+fd_kubectl() {
+    local kubeconfig=$FD_OP_KUBECONFIG
+    if [[ $FD_OP_NODE_ROLE == agent ]]; then
+        kubeconfig=$FD_OP_AGENT_KUBECONFIG
+    fi
+    "$FD_OP_K3S_INSTALLED" kubectl --kubeconfig "$kubeconfig" "$@"
+}
+
+fd_etcdctl() {
+    ETCDCTL_ENDPOINTS="$FD_OP_ETCD_ENDPOINT" \
+    ETCDCTL_CACERT="$FD_OP_ETCD_CA" \
+    ETCDCTL_CERT="$FD_OP_ETCD_CERT" \
+    ETCDCTL_KEY="$FD_OP_ETCD_KEY" \
+        "$FD_OP_ETCDCTL_ARTIFACT" "$@"
+}
+
+fd_unquote_value() {
+    local value=$1 first last length
+    length=${#value}
+    if ((length >= 2)); then
+        first=${value:0:1}
+        last=${value:length-1:1}
+        if [[ $first == "$last" && ( $first == "'" || $first == '"' ) ]]; then
+            value=${value:1:length-2}
+        fi
+    fi
+    printf '%s' "$value"
+}
+
+fd_local_credential() {
+    local path raw value found
+    if [[ $FD_OP_NODE_ROLE == server-cluster-init || $FD_OP_NODE_ROLE == server-join ]]; then
+        path=$FD_OP_SERVER_TOKEN
+        fd_require_secure_file "$path" 'server credential file' || return $?
+        IFS= read -r value <"$path" || return 69
+    else
+        path=$FD_OP_AGENT_ENV
+        fd_require_secure_file "$path" 'agent service environment file' || return $?
+        found=0
+        value=
+        while IFS= read -r raw || [[ -n $raw ]]; do
+            case $raw in
+                K3S_TOKEN=*)
+                    ((found += 1))
+                    value=$(fd_unquote_value "${raw#*=}") || return $?
+                    ;;
+            esac
+        done <"$path"
+        if ((found != 1)); then
+            fd_error 'agent service environment must contain exactly one K3S_TOKEN assignment'
+            return 69
+        fi
+    fi
+    if [[ -z $value || $value == *[[:space:]]* ]]; then
+        fd_error 'local join credential is empty or contains whitespace'
+        return 69
+    fi
+    printf '%s' "$value"
+}
+
+fd_normalize_credential() {
+    local value remainder
+    value=$(fd_local_credential) || return $?
+    if [[ $value == K10* ]]; then
+        remainder=${value#*::}
+        if [[ $remainder == "$value" || $remainder != *:* ]]; then
+            fd_error 'secure local join credential is malformed'
+            return 69
+        fi
+        value=${remainder#*:}
+    fi
+    if [[ -z $value ]]; then
+        fd_error 'normalized local join credential is empty'
+        return 69
+    fi
+    printf '%s' "$value"
+}
+
+fd_join_digest() {
+    fd_normalize_credential | fd_sha256_stream
+}
+
+fd_node_ready() {
+    local attempt=$1 observed unit
+    if [[ ${FIREDRILL_OP_TESTING:-0} == 1 ]]; then
+        [[ ${FIREDRILL_OP_READY_AFTER_ATTEMPT:-1} =~ ^[0-9]+$ ]] || return 69
+        ((attempt >= FIREDRILL_OP_READY_AFTER_ATTEMPT))
+        return
+    fi
+    unit=$FD_OP_AGENT_UNIT
+    if [[ $FD_OP_NODE_ROLE != agent ]]; then
+        unit=$FD_OP_SERVER_UNIT
+    fi
+    systemctl is-active --quiet "$unit" || return $?
+    observed=$(fd_kubectl get node "$FD_OP_NODE_NAME" \
+        -o 'jsonpath={.status.conditions[?(@.type=="Ready")].status}') || return $?
+    [[ $observed == True ]]
+}
+
+fd_server_etcd_healthy() {
+    local attempt=$1
+    if [[ ${FIREDRILL_OP_TESTING:-0} == 1 ]]; then
+        [[ ${FIREDRILL_OP_ETCD_HEALTHY_AFTER_ATTEMPT:-1} =~ ^[0-9]+$ ]] || return 69
+        ((attempt >= FIREDRILL_OP_ETCD_HEALTHY_AFTER_ATTEMPT))
+        return
+    fi
+    fd_verify_artifact "$FD_OP_ETCDCTL_ARTIFACT" "$FD_OP_ETCDCTL_SHA256" \
+        etcdctl 755 || return $?
+    fd_etcdctl endpoint health >/dev/null
+}
+
+fd_sleep() {
+    if [[ ${FIREDRILL_OP_TESTING:-0} == 1 ]]; then
+        return 0
+    fi
+    sleep "$1"
+}
+
+fd_wait_ready() {
+    local timeout attempt local_digest
+    timeout=${FIREDRILL_OP_WAIT_TIMEOUT_SECONDS:-$FD_OP_READY_TIMEOUT}
+    fd_positive_integer wait-ready-timeout "$timeout" || return $?
+    fd_verify_staged_set || return $?
+    fd_verify_artifact "$FD_OP_K3S_INSTALLED" "$FD_OP_K3S_SHA256" \
+        'installed K3s binary' 755 || return $?
+    local_digest=$(fd_join_digest) || return $?
+    if [[ $local_digest != "$FD_OP_JOIN_DIGEST" ]]; then
+        fd_error 'local role credential digest differs from runtime configuration'
+        return 69
+    fi
+    for ((attempt = 1; attempt <= timeout; attempt++)); do
+        if fd_node_ready "$attempt"; then
+            if [[ $FD_OP_NODE_ROLE == agent ]] \
+                || fd_server_etcd_healthy "$attempt"; then
+                printf 'ready\n'
+                return 0
+            fi
+        fi
+        if ((attempt < timeout)); then
+            fd_sleep 1 || return $?
+        fi
+    done
+    fd_error "wait-ready timed out after $timeout seconds"
+    return 70
+}
+
+fd_next_cluster_role() {
+    local remaining=$1 item
+    item=${remaining%%,*}
+    if [[ $remaining == *,* ]]; then
+        FD_OP_ROLE_REMAINDER=${remaining#*,}
+    else
+        FD_OP_ROLE_REMAINDER=
+    fi
+    if [[ ! $item =~ ^([a-z0-9-]+):(server|agent)$ ]]; then
+        fd_error 'cluster_node_roles contains an invalid entry'
+        return 69
+    fi
+    FD_OP_ROLE_NAME=${BASH_REMATCH[1]}
+    FD_OP_ROLE_VALUE=${BASH_REMATCH[2]}
+}
+
+fd_fixture_nodes() {
+    local raw name role ready digest count
+    count=0
+    while IFS= read -r raw || [[ -n $raw ]]; do
+        IFS='|' read -r name role ready digest <<<"$raw"
+        if [[ ! $name =~ ^[a-z0-9-]+$ || ! $role =~ ^(server|agent)$ \
+            || ! $ready =~ ^(true|false)$ || ! $digest =~ ^[a-f0-9]{64}$ ]]; then
+            fd_error 'node fixture contains an invalid record'
+            return 69
+        fi
+        FD_OP_NODE_NAMES+=("$name")
+        FD_OP_NODE_ROLES+=("$role")
+        FD_OP_NODE_READY+=("$ready")
+        FD_OP_NODE_DIGESTS+=("$digest")
+        ((count += 1))
+    done <"$FIREDRILL_OP_NODES_FIXTURE"
+    ((count > 0))
+}
+
+fd_collect_nodes() {
+    local remaining name role ready digest digest_a digest_b
+    FD_OP_NODE_NAMES=()
+    FD_OP_NODE_ROLES=()
+    FD_OP_NODE_READY=()
+    FD_OP_NODE_DIGESTS=()
+    if [[ ${FIREDRILL_OP_TESTING:-0} == 1 ]]; then
+        fd_fixture_nodes
+        return
+    fi
+    remaining=$FD_OP_CLUSTER_NODE_ROLES
+    while [[ -n $remaining ]]; do
+        fd_next_cluster_role "$remaining" || return $?
+        remaining=$FD_OP_ROLE_REMAINDER
+        name=$FD_OP_ROLE_NAME
+        role=$FD_OP_ROLE_VALUE
+        ready=$(fd_kubectl get node "$name" \
+            -o 'jsonpath={.status.conditions[?(@.type=="Ready")].status}') || return $?
+        if [[ $ready == True ]]; then
+            ready=true
+        else
+            ready=false
+        fi
+        digest_a=$(fd_kubectl get node "$name" \
+            -o 'go-template={{index .metadata.labels "firedrill.internal/join-sha256-a"}}') \
+            || return $?
+        digest_b=$(fd_kubectl get node "$name" \
+            -o 'go-template={{index .metadata.labels "firedrill.internal/join-sha256-b"}}') \
+            || return $?
+        digest=$digest_a$digest_b
+        if [[ ! $digest =~ ^[a-f0-9]{64}$ ]]; then
+            fd_error "node $name lacks a valid join-credential annotation"
+            return 69
+        fi
+        FD_OP_NODE_NAMES+=("$name")
+        FD_OP_NODE_ROLES+=("$role")
+        FD_OP_NODE_READY+=("$ready")
+        FD_OP_NODE_DIGESTS+=("$digest")
+    done
+}
+
+fd_trim() {
+    local value=$1
+    value=${value#"${value%%[![:space:]]*}"}
+    value=${value%"${value##*[![:space:]]}"}
+    printf '%s' "$value"
+}
+
+fd_fixture_etcd_members() {
+    local raw name healthy count
+    count=0
+    while IFS= read -r raw || [[ -n $raw ]]; do
+        IFS='|' read -r name healthy <<<"$raw"
+        if [[ ! $name =~ ^[a-z0-9-]+$ || ! $healthy =~ ^(true|false)$ ]]; then
+            fd_error 'etcd member fixture contains an invalid record'
+            return 69
+        fi
+        FD_OP_ETCD_NAMES+=("$name")
+        FD_OP_ETCD_HEALTHY+=("$healthy")
+        ((count += 1))
+    done <"$FIREDRILL_OP_ETCD_MEMBERS_FIXTURE"
+    ((count > 0))
+}
+
+fd_collect_etcd_members() {
+    local output health_ok raw id status name peer client learner healthy
+    FD_OP_ETCD_NAMES=()
+    FD_OP_ETCD_HEALTHY=()
+    if [[ ${FIREDRILL_OP_TESTING:-0} == 1 ]]; then
+        fd_fixture_etcd_members
+        return
+    fi
+    output=$(fd_etcdctl member list --write-out=simple) || return $?
+    health_ok=false
+    if fd_etcdctl endpoint health --cluster >/dev/null; then
+        health_ok=true
+    fi
+    while IFS= read -r raw || [[ -n $raw ]]; do
+        IFS=',' read -r id status name peer client learner <<<"$raw"
+        : "$id" "$peer" "$client" "$learner"
+        status=$(fd_trim "$status")
+        name=$(fd_trim "$name")
+        if [[ ! $name =~ ^[a-z0-9-]+$ ]]; then
+            fd_error 'etcdctl returned an unsafe or empty member name'
+            return 69
+        fi
+        healthy=false
+        if [[ $status == started && $health_ok == true ]]; then
+            healthy=true
+        fi
+        FD_OP_ETCD_NAMES+=("$name")
+        FD_OP_ETCD_HEALTHY+=("$healthy")
+    done <<<"$output"
+}
+
+fd_collect_bootstrap_keys() {
+    local output key
+    FD_OP_BOOTSTRAP_KEYS=()
+    if [[ ${FIREDRILL_OP_TESTING:-0} == 1 ]]; then
+        output=$(sed -n 'p' "$FIREDRILL_OP_BOOTSTRAP_FIXTURE") || return $?
+    else
+        output=$(fd_etcdctl get /bootstrap/ --prefix --keys-only) || return $?
+    fi
+    while IFS= read -r key || [[ -n $key ]]; do
+        [[ -n $key ]] || continue
+        if [[ ! $key =~ ^/bootstrap/[a-f0-9]{12}$ ]]; then
+            fd_error 'datastore returned an invalid bootstrap key name'
+            return 69
+        fi
+        FD_OP_BOOTSTRAP_KEYS+=("$key")
+    done <<<"$output"
+}
+
+fd_print_nodes_json() {
+    local index separator
+    separator=
+    printf '['
+    for ((index = 0; index < ${#FD_OP_NODE_NAMES[@]}; index++)); do
+        printf '%s{"name":"%s","role":"%s","ready":%s,"join_credential_sha256":"%s"}' \
+            "$separator" "${FD_OP_NODE_NAMES[$index]}" "${FD_OP_NODE_ROLES[$index]}" \
+            "${FD_OP_NODE_READY[$index]}" "${FD_OP_NODE_DIGESTS[$index]}"
+        separator=,
+    done
+    printf ']'
+}
+
+fd_print_etcd_json() {
+    local index separator
+    separator=
+    printf '['
+    for ((index = 0; index < ${#FD_OP_ETCD_NAMES[@]}; index++)); do
+        printf '%s{"name":"%s","healthy":%s}' "$separator" \
+            "${FD_OP_ETCD_NAMES[$index]}" "${FD_OP_ETCD_HEALTHY[$index]}"
+        separator=,
+    done
+    printf ']'
+}
+
+fd_print_keys_json() {
+    local index separator
+    separator=
+    printf '['
+    for ((index = 0; index < ${#FD_OP_BOOTSTRAP_KEYS[@]}; index++)); do
+        printf '%s"%s"' "$separator" "${FD_OP_BOOTSTRAP_KEYS[$index]}"
+        separator=,
+    done
+    printf ']'
+}
+
+fd_all_true() {
+    local expected=$1
+    shift
+    (($# == expected)) || return 1
+    while (($# > 0)); do
+        [[ $1 == true ]] || return 1
+        shift
+    done
+}
+
+fd_capture_cluster_state() {
+    local all_nodes all_etcd ca_sha
+    fd_verify_staged_set || return $?
+    fd_verify_artifact "$FD_OP_K3S_INSTALLED" "$FD_OP_K3S_SHA256" \
+        'installed K3s binary' 755 || return $?
+    for path in "$FD_OP_KUBECONFIG" "$FD_OP_SERVER_CA" "$FD_OP_ETCD_CA" \
+        "$FD_OP_ETCD_CERT" "$FD_OP_ETCD_KEY"; do
+        if [[ ! -f $path || -L $path ]]; then
+            fd_error 'cluster observation credential or CA path is missing or unsafe'
+            return 69
+        fi
+    done
+    if [[ ! -d $FD_OP_ETCD_SNAPSHOT_DIR || -L $FD_OP_ETCD_SNAPSHOT_DIR ]]; then
+        fd_error 'configured etcd snapshot directory is missing or unsafe'
+        return 69
+    fi
+    fd_collect_nodes || return $?
+    fd_collect_etcd_members || return $?
+    fd_collect_bootstrap_keys || return $?
+    all_nodes=false
+    all_etcd=false
+    if fd_all_true 5 "${FD_OP_NODE_READY[@]}"; then
+        all_nodes=true
+    fi
+    if fd_all_true 3 "${FD_OP_ETCD_HEALTHY[@]}"; then
+        all_etcd=true
+    fi
+    ca_sha=$(fd_sha256_file "$FD_OP_SERVER_CA") || return $?
+    printf '{"nodes":'
+    fd_print_nodes_json
+    printf ',"all_nodes_ready":%s,"etcd_members":' "$all_nodes"
+    fd_print_etcd_json
+    printf ',"all_etcd_members_healthy":%s,"bootstrap_keys":' "$all_etcd"
+    fd_print_keys_json
+    printf ',"ca_sha256":"%s"}\n' "$ca_sha"
+}
+
+fd_usage() {
+    printf '%s\n' \
+        'usage: firedrill-op install-k3s <server-cluster-init|server-join|agent> <version>' \
+        '       firedrill-op wait-ready' \
+        '       firedrill-op capture-cluster-state' >&2
+}
+
+main() {
+    local verb=${1:-}
+    fd_read_config || return $?
+    case $verb in
+        install-k3s)
+            if (($# != 3)); then
+                fd_usage
+                return 64
+            fi
+            fd_install_k3s "$2" "$3"
+            ;;
+        wait-ready)
+            if (($# != 1)); then
+                fd_usage
+                return 64
+            fi
+            fd_wait_ready
+            ;;
+        capture-cluster-state)
+            if (($# != 1)); then
+                fd_usage
+                return 64
+            fi
+            fd_capture_cluster_state
+            ;;
+        *)
+            fd_usage
+            return 64
+            ;;
+    esac
+}
+
+main "$@"

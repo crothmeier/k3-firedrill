@@ -1,0 +1,153 @@
+# Select the implementation. This committed example is deliberately safe for
+# local-only use. Set to pve or libvirt only after filling that driver's fields.
+driver=mock
+
+# Transport target and expected identity. The identity must exactly match what
+# the selected driver probes before every mutation. A wrong value aborts safely.
+hypervisor_host=mock-hypervisor.invalid
+expected_hypervisor_hostname=mock-hypervisor
+
+# PVE transport target. Required only for driver=pve. pve_host must equal
+# hypervisor_host and pve_node must equal expected_hypervisor_hostname.
+pve_host=CHANGEME
+pve_node=CHANGEME
+
+# PVE ZFS-backed storage used for clone disks and snapshots. A wrong value can
+# place disposable disks on unintended storage, so preflight must prove it exists.
+pve_storage=CHANGEME
+
+# VMID of the cloud-init Debian or Ubuntu template. A wrong value could clone an
+# unintended guest, so the PVE driver verifies that it is a template.
+template_vmid=CHANGEME
+
+# PVE execution and cloud-init conventions are never inferred. Full clones are
+# the only reviewed mode. The public-key path is on the PVE host; the private
+# keys and known-hosts files are local to the harness seat. Privilege modes are
+# one of direct, sudo-n, or doas-n. Set every CHANGEME before driver=pve.
+pve_clone_mode=full
+pve_privilege_mode=CHANGEME
+pve_cloud_init_user=CHANGEME
+pve_cloud_init_sshkeys_path=CHANGEME
+pve_net_model=CHANGEME
+pve_net_device=CHANGEME
+pve_ipconfig_device=CHANGEME
+pve_os_disk=CHANGEME
+pve_guest_agent=CHANGEME
+ssh_known_hosts_path=CHANGEME
+guest_ssh_user=CHANGEME
+guest_ssh_key_path=CHANGEME
+guest_ssh_known_hosts_path=CHANGEME
+guest_privilege_mode=CHANGEME
+ssh_connect_timeout_seconds=10
+pve_operation_timeout_seconds=300
+
+# Real-guest control and air-gap inputs. These fields are required only for
+# driver=pve. The three SHA-256 values intentionally remain placeholders: a
+# real configuration fails closed until the operator supplies pins for the
+# exact staged release artifacts. k3s_join_credential_file is a local,
+# uncommitted mode-0600 file containing one initial cluster token line.
+firedrill_op_config_path=/etc/firedrill/op.env
+guest_join_file=/etc/firedrill/join.env
+k3s_join_credential_file=CHANGEME
+k3s_api_port=6443
+k3s_binary_artifact_path=/opt/firedrill/artifacts/k3s
+k3s_binary_sha256=CHANGEME
+k3s_install_script_artifact_path=/opt/firedrill/artifacts/install.sh
+k3s_install_script_sha256=CHANGEME
+etcdctl_artifact_path=/opt/firedrill/artifacts/etcdctl
+etcdctl_sha256=CHANGEME
+k3s_installed_binary_path=/usr/local/bin/k3s
+
+# Observation paths and commands consumed inside each guest. The etcd client
+# CA/certificate/key defaults are UNVERIFIED until read from a pristine node at
+# the pinned K3s release; confirm them before first real provisioning.
+k3s_kubeconfig_path=/etc/rancher/k3s/k3s.yaml
+k3s_agent_kubeconfig_path=/var/lib/rancher/k3s/agent/kubelet.kubeconfig
+k3s_server_ca_path=/var/lib/rancher/k3s/server/tls/server-ca.crt
+k3s_server_token_path=/var/lib/rancher/k3s/server/token
+k3s_server_service_env_path=/etc/systemd/system/k3s.service.env
+k3s_agent_service_env_path=/etc/systemd/system/k3s-agent.service.env
+k3s_server_systemd_unit=k3s
+k3s_agent_systemd_unit=k3s-agent
+k3s_etcd_endpoint=https://127.0.0.1:2379
+k3s_etcd_ca_path=/var/lib/rancher/k3s/server/tls/etcd/server-ca.crt
+k3s_etcd_client_cert_path=/var/lib/rancher/k3s/server/tls/etcd/client.crt
+k3s_etcd_client_key_path=/var/lib/rancher/k3s/server/tls/etcd/client.key
+k3s_etcd_snapshot_dir=/var/lib/rancher/k3s/server/db/snapshots
+test_a_journal_line_limit=1000
+
+# Libvirt SSH target. Required only for driver=libvirt and must equal
+# hypervisor_host so there is only one transport target.
+libvirt_host=CHANGEME
+
+# Source domain passed to virt-clone. A wrong value clones the wrong image.
+libvirt_template=CHANGEME
+
+# Libvirt storage pool for disposable guest volumes and snapshots. A wrong value
+# can consume or mutate unintended storage.
+libvirt_storage_pool=CHANGEME
+
+# First numeric allocation ID. Exactly five IDs, vmid_base through vmid_base+4,
+# are permitted. PVE uses them as VMIDs; libvirt embeds them in owned domain names.
+vmid_base=7100
+
+# Hypervisor bridge attached to all guest NICs. A wrong bridge may expose the lab
+# to an unintended network, so it is mandatory and never inferred.
+network_bridge=vmbr-lab
+
+# Disposable subnet and gateway. 192.0.2.0/24 is RFC 5737 documentation space
+# and is intentionally non-production; replace both values for a real isolated lab.
+ip_cidr=192.0.2.0/24
+gateway=192.0.2.1
+
+# Five unique host offsets in server-1, server-2, server-3, agent-1, agent-2 order.
+# A wrong order directs node operations at the wrong guest.
+ip_offsets=10,11,12,13,14
+
+# SSH account and private key for real hypervisor and guest access. Required only
+# by real drivers. Never place the key itself in this repository.
+ssh_user=CHANGEME
+ssh_key_path=CHANGEME
+
+# Exact K3s release under rehearsal. Changing it invalidates comparison with an
+# operational rotation performed on another release.
+k3s_version=v1.34.4+k3s1
+
+# Hypervisor snapshot name shared by the five baseline snapshots. A wrong name
+# can make rollback unavailable or select unrelated snapshots.
+snapshot_name=firedrill-baseline
+
+# Persistent state and redacted evidence root. Relative paths resolve beside this
+# config file. Keep this path gitignored or outside the repository.
+run_dir=./runs
+
+# Namespace for all five guest names. It is also part of the ownership boundary.
+guest_name_prefix=k3fd
+
+# Exact server rolling-restart order. The accepted lab default exercises the
+# cluster-init server first; it is not a recommendation for production ordering.
+server_restart_order=server-1,server-2,server-3
+
+# Bounded waits, in seconds. Too-short values create false failures; excessively
+# long values delay a real failure. Every wait exits distinctly when its bound expires.
+guest_access_timeout_seconds=300
+node_ready_timeout_seconds=300
+k3s_install_timeout_seconds=600
+cluster_capture_timeout_seconds=120
+
+# Test B targets exactly one server and models the complete credential-precedence
+# surface. Every path is literal guest state: no glob, discovery, or recursive
+# deletion is permitted. Keep the two deletion paths in this exact order and
+# rooted beneath test_b_data_dir. Helper roots are explicit even in the mock.
+test_b_target_server=server-1
+test_b_data_dir=/var/lib/rancher/k3s
+test_b_deletion_allowlist=/var/lib/rancher/k3s/server/cred/passwd,/var/lib/rancher/k3s/server/token
+test_b_systemd_unit=/etc/systemd/system/k3s.service
+test_b_systemd_dropin_dirs=/etc/systemd/system/k3s.service.d,/run/systemd/system/k3s.service.d,/usr/local/lib/systemd/system/k3s.service.d,/usr/lib/systemd/system/k3s.service.d
+test_b_environment_file=/etc/systemd/system/k3s.service.env
+test_b_default_sources=/etc/default/k3s,/etc/sysconfig/k3s
+test_b_config_file=/etc/rancher/k3s/config.yaml
+test_b_config_dropin_dir=/etc/rancher/k3s/config.yaml.d
+test_b_helper_roots=/opt/firedrill/mock-rejoin
+test_b_owned_override_name=90-firedrill-test-b.conf
+test_b_recovery_timeout_seconds=300
