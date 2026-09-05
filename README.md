@@ -1,172 +1,36 @@
 # k3-firedrill
 
-`k3-firedrill` is a failure-rehearsal harness for server-token rotation on a disposable,
-three-server embedded-etcd K3s cluster. Its purpose is to make recovery claims reviewable:
-commands, output, state observations, timings, and gate verdicts are retained as redacted
-machine-readable evidence.
+I built this harness to rehearse one specific production change before I made it: rotating the shared server token on a three-server, embedded-etcd k3s cluster. A previous rotation on that cluster had caused an outage, and I had written a runbook to prevent a repeat. I did not trust the runbook until it had been executed against something disposable. This repository is the disposable thing, and the record of what happened when I did.
 
-This checkout implements the `mock` lifecycle and the offline Test A, Test B, and Test C
-execution bodies with evidence-derived gates. The `pve` driver implements lifecycle primitives,
-the air-gapped guest interface, and the six real Test A hooks; Test B/C remain fail-closed at
-exit 69. The `libvirt` driver remains a fail-closed stub, and `test-all` intentionally exits 69.
-Passing an offline test makes no claim about real-hardware rotation or recovery. The PVE Test A
-hooks have transport-stub coverage only and have never been executed against a cluster. Follow
-`docs/GUEST_ARTIFACT_STAGING.md` and `docs/PVE_DRIVER_VERIFICATION.md` before first use.
+## What it rehearses, and why
 
-## Why `./firedrill` is the entrypoint
+A k3s server keeps working on its old token in memory indefinitely. The crash only comes at restart: if a server starts with a token that no longer matches what etcd was re-encrypted with, it refuses to come up — `bootstrap data already found and encrypted with different token` — and then, on every retry, refuses for a second reason: two files on its disk are now newer than the datastore's record of them, and k3s will not overwrite them (`newer than datastore and could cause a cluster outage`). Fixing the token source does not clear the second condition. Only deleting those two files does. That two-stage trap is what the runbook had to get right, and what the harness exists to reproduce on purpose.
 
-The executable provides one place for strict mode, error and cleanup traps, configuration
-selection, stable exit codes, confirmation handling, and driver loading. `make` is retained
-only for the mandatory local quality gate; it is not the operator control surface.
+The lab is five VMs on one hypervisor host: three servers (embedded etcd) and two agents, restored to a snapshot baseline between attempts. It rehearses the procedure and the tooling. It does not rehearse the production topology — one host, one kernel, one storage pool — so nothing here is evidence of high availability.
 
-## Safety boundary
+## What happened
 
-Configuration is parsed as literal lowercase `key=value` data. It is never sourced or
-evaluated as shell. Missing, duplicate, malformed, and placeholder values abort with the
-variable's purpose.
+On 2026-09-02 the first hardware run executed my runbook's assumptions as then written and reproduced the outage the runbook exists to prevent: the harness wrote the new token into the file k3s regenerates at start, one server came back on the stale credential, and both register strings appeared in the predicted order while the other two servers kept quorum. I revised the runbook that day. Later the same night the clean rotation passed with an ordered rolling restart — the server that ran the rotate command restarted last — and every gate was re-measured by hand. On 2026-09-04 I planted a stale token on one server deliberately, watched it crash-loop while the other two held quorum and the API kept answering from the surviving server I was measuring from, confirmed that fixing the token source alone left five consecutive refusals, deleted exactly the two files, and had the server back in service in 45 seconds. Six harness rollbacks restored the baseline six times, including once from a crash-looping control plane.
 
-Before every driver mutation—not merely during `preflight`—the harness:
+The production credential is still unrotated, under a dated, written deferral I authored. The clean-rotation and single-node failure-injection tests passed; the quorum-loss test is next. Nothing about this is complete.
 
-1. probes the selected hypervisor's identity and requires an exact match with
-   `expected_hypervisor_hostname`;
-2. checks every configured hypervisor, gateway, guest IP, and guest hostname against the
-   optional exact-match `firedrill.denylist`;
-3. requires the guest's numeric allocation ID to be both inside `vmid_base..vmid_base+4`
-   and present in the exact five-node inventory; and
-4. for an existing guest, requires a driver-specific ownership marker matching the active
-   `lab_id`.
+## Architecture
 
-The local state file is evidence, not authorization. An ID in state still cannot be mutated
-without live identity and ownership checks. `destroy` additionally requires the exact active
-lab ID through `--confirm` and retains the run evidence after deleting guests.
+`./firedrill` is the single entrypoint (strict mode, traps, stable exit codes: 65 config, 66 state, 67 snapshot, 69 driver/unimplemented, 70 health timeout, 71 blast radius, 78 safety). Lifecycle verbs — `preflight`, `provision`, `baseline`, `test-a`, `test-b`, `test-c`, `rollback`, `report`, `destroy` — call a **driver interface** (`lib/drivers/`): a `mock` driver backed by a state model for offline runs, and a `pve` driver that talks to the hypervisor and guests over one replaceable SSH transport. Every mutation passes **fail-closed guards** first: exact hypervisor identity, a denylist of forbidden targets, a five-VMID allocation window, and a per-guest ownership marker. Every command is written to an **evidence ledger** (`commands.jsonl` plus per-command stdout/stderr, phase records, and gate observations) through a redaction layer that replaces token values with prefix-plus-digest before anything touches disk. Real Test B/C hooks are deliberately unimplemented and exit 69; those sittings were run by hand from the runbook's annex, which is how they belong until the hooks are reviewed. The **transport-stub tests** (`tests/`, 141 offline tests plus shell lint over 30 files) exercise command construction, guards, redaction, and gate logic without a network.
 
-The committed addresses use RFC 5737 documentation space and `.invalid` hostnames. They are
-not production examples and real drivers reject a `.invalid` hypervisor target.
+## The design lesson
 
-## Configuration
+Four of those offline tests encoded a wrong assumption about an external tool, and all four passed review: the hypervisor's rollback semantics (it stops a running guest itself), what `k3s token generate` emits (a bootstrap token, not a server token), where k3s reads its server token from (`server/token` is an output, not an input), and how embedded-etcd members are named (with an 8-hex suffix). Each was cheap to measure and expensive to discover live. The rule that came out of it, now in `AGENTS.md`: any stub that models an external tool's behaviour carries one measured sample beside it — command, host, date, verbatim output. The four are documented in `pack/P8_DISPROVED_STUBS.md`; the samples sit next to the stubs in `tests/test_pve_driver.sh`.
 
-Copy both examples before local use:
+## Numbers
 
-```sh
-cp firedrill.conf.example firedrill.conf
-cp firedrill.denylist.example firedrill.denylist
-```
+5 nodes · 2 clean rotations on 2026-09-02 (the second harness-certified 7/7) · 1 deliberate failure injection and recovery on 2026-09-04 · 6 rollbacks, 6 passed · 141 offline tests · 9 findings from the 09-02 night, 4 more from 09-04, 20 finding IDs in `docs/PROJECT_STATE.md` overall · quorum-loss test: 0 runs.
 
-Every setting is explained in `firedrill.conf.example`. Common safety, allocation,
-addressing, version, snapshot, and evidence settings are always required. SSH and
-hypervisor-specific values are required only when their real driver is selected. PVE additionally
-requires a local mode-0600 join-credential file and exact SHA-256 pins for the staged K3s binary,
-K3s install script, and `etcdctl`; the committed placeholders deliberately reject real use.
+## Reading the evidence
 
-The five planned nodes are fixed in this increment:
+`pack/` holds the evidence pack: the deferral record, the runbook before and after as diff hunks, both sittings' logs, the five-node hand-remeasurement, the hypervisor inventory, the index of what has not run, and the four disproved stubs — each file headed with its source and commit. Start at `pack/PACK_INDEX.md`. `docs/PROJECT_STATE.md` is the harness's own state record; `docs/FINDING_*.md` are the standalone finding writeups.
 
-| Node | Allocation | CPU | Memory | Disk |
-|---|---:|---:|---:|---:|
-| server-1 | `vmid_base+0` | 2 | 4 GiB | 20 GiB |
-| server-2 | `vmid_base+1` | 2 | 4 GiB | 20 GiB |
-| server-3 | `vmid_base+2` | 2 | 4 GiB | 20 GiB |
-| agent-1 | `vmid_base+3` | 2 | 2 GiB | 15 GiB |
-| agent-2 | `vmid_base+4` | 2 | 2 GiB | 15 GiB |
+This repository is a curated snapshot of the working repo at commit `11748cc`, scrubbed of lab identity (addresses replaced with RFC 5737 space, hostnames aliased; cut record in `.scrub/`). Beyond the planned file list it also carries `pyproject.toml`, `.gitignore`, and `firedrill.denylist.example`, because without them the test suite cannot run here. Dispatch prompts, seat-migration notes, and handoffs are not included.
 
-## Offline mock workflow
-
-The mandatory local gate uses no network, SSH client, hypervisor tool, cluster, or registry.
-It requires Bash 3.2 or newer, Python 3.11 or newer, Ruff, and ShellCheck to already be
-installed; the Makefile never downloads tooling:
-
-```sh
-make test
-./firedrill preflight
-./firedrill provision
-./firedrill baseline
-./firedrill test-a
-./firedrill report
-./firedrill rollback
-./firedrill test-b
-./firedrill report
-./firedrill rollback
-./firedrill test-c
-./firedrill report
-./firedrill rollback
-```
-
-`provision` prints the generated lab ID. Destruction requires that exact value:
-
-```sh
-./firedrill destroy --confirm fd-YYYYMMDDTHHMMSSz-abcdef
-```
-
-Re-running `provision` for an already provisioned or baselined active lab is a no-op.
-An active lab with a different configuration is a hard error. Baseline capture is also a
-no-op when it already exists.
-
-## Evidence and state
-
-`provision` creates a timestamped run beneath `run_dir` and updates `current.json`. Each run
-contains:
-
-```text
-RUN/
-├── manifest.json
-├── state.json
-├── driver/mock.json
-├── evidence/
-│   ├── commands.jsonl
-│   ├── commands/*.stdout.log and *.stderr.log
-│   ├── test-a/{phases.json,gate-observation.json,gate.json,gate-table.md}
-│   ├── test-b/{setup.json,break.json,recovery.json,phases.json,
-│   │           gate-observation.json,gate.json,gate-table.md}
-│   └── test-c/{setup.json,break.json,triage.json,recovery.json,
-│              recovery-finish.json,phases.json,gate-observation.json,
-│              final-bootstrap-key.json,gate.json,gate-table.md}
-├── baseline/
-│   ├── ca.sha256
-│   ├── cluster-state.json
-│   └── snapshots.json
-└── report.md
-```
-
-Command records contain ordered sequence numbers, timestamps, node, redacted argv, exit
-status, stdout, and stderr. Full-format K3s tokens are replaced with a short prefix and a
-SHA-256 reference before evidence is written. YAML token keys and token-bearing command or
-environment syntax are redacted as backstops. The evidence writer also consumes the in-memory
-JSON array in `FIREDRILL_ACTIVE_TOKENS_JSON`; literal and whitespace-normalized occurrences of
-those known values are removed anywhere in argv, stdout, stderr, journals, or captured file
-content. Console replay comes from the sanitized artifacts rather than the raw capture files.
-Future token-handling code must keep this registry current, keep raw tokens out of state, and
-pass only redacted references to the reporting layer.
-
-## Planned real-hardware sequence
-
-The PVE lifecycle and Test A sequence are implemented but the new guest and Test A paths
-**have not been verified on real hardware**. Test B, Test C, and `test-all` are not runnable:
-
-1. Prepare an isolated bridge and the reviewed Ubuntu cloud-init template on ZFS; stage the
-   pinned offline set with `docs/GUEST_ARTIFACT_STAGING.md`.
-2. Allocate five unused consecutive VMIDs and a disposable subnet.
-3. Fill `firedrill.conf`, populate the denylist with forbidden production targets, and review
-   the computed inventory.
-4. Run `make test`, then `./firedrill preflight`.
-5. Run `./firedrill provision`, verify the five guests, then `./firedrill baseline`.
-6. After the lifecycle evidence is reviewed, follow the Test A walk in
-   `docs/PVE_DRIVER_VERIFICATION.md`; stop on any abort point and do not improvise recovery.
-7. Confirm that `test-b`, `test-c`, and `test-all` still exit 69 with `driver=pve`.
-8. Attach the retained lifecycle and Test A evidence to the execution record.
-9. After review, run `./firedrill destroy --confirm LAB_ID`.
-
-Real Test B/C hooks still require a separate reviewed increment.
-
-## Restart-order caveat
-
-The lab default is `server-1,server-2,server-3`, deliberately exercising the cluster-init
-server first while two other etcd members remain. This is a lab choice, not production
-guidance. Production ordering also depends on the floating API VIP location and a mix of
-bare-metal and virtualized control-plane hosts. This five-VM lab models neither factor and
-cannot rehearse VIP failover during the roll. See `docs/OPEN_QUESTIONS.md`.
-
-## Exit behavior
-
-Configuration errors use exit 65, state errors 66, missing snapshots 67, driver/model errors
-69, bounded-health timeout uses 70, Test B blast-radius violations use 71, and safety guard
-failures use 78. All failures are loud; an unimplemented real-driver or failure-test path never
-degrades into a mock success.
+---
+*Harness increments were produced by an AI coding agent (Codex) to my specification, under my dispatch and acceptance review; I wrote the runbook it tested and the revisions to it.*

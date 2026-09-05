@@ -457,7 +457,7 @@ stub/offline only until that gate runs.
    gated on one routing measurement (its §1).
 5. Real test-b / test-c hook bodies — fail-closed at exit 69 by design;
    need a future dispatch after test-a experience.
-6. Exec-log evidence for the Lazarus Labs records repo (Nexus) covering
+6. Exec-log evidence for the private records repo (Nexus) covering
    the 2026-08-30 provisioning day.
 
 ## Lab power state

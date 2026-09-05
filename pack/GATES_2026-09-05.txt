@@ -1,0 +1,25 @@
+CS-5 Sitting B — redaction gates over pack/ and README.md
+run: 2026-09-05T21:05:05Z  mirror HEAD: e2e1187  (working tree: README.md, docs/PROJECT_STATE.md modified; pack/ untracked)
+scope A = pack/ + README.md
+  gate 1  identity grep (3.8 pattern)            : 0
+  gate 2  64-hex minus allowlist                 : 0
+  gate 3  K10<hex>:: token form                  : 0
+scope B = whole mirror excluding .git .scrub
+  gate 1  identity grep (3.8 pattern)            : 0
+  gate 1i identity grep, case-insensitive subset : 0   (PROJECT_STATE.md:460 'Lazarus Labs' was 1 at e2e1187; edited this sitting)
+  gate 2  64-hex minus both allowlists           : 0
+  gate 3  K10<hex>:: token form                  : 0
+allowlist 64-hex:
+  40d6b4a1a6e0598ceaba01dc35c684bc56658e3b5ecaf484c86a7b4e120d35a2  evidence file sha256 (P5)
+  e8e2170d8d83...  config-manifest re-projection digest, docs/PROJECT_STATE.md (Sitting A allowlist)
+pack files: GATES_2026-09-05.txt P1_DEFERRAL_RECORD.md P2_RUNBOOK_BEFORE_AFTER.md P3_2026-09-02_SITTING_NOTES.md P4_2026-09-04_INJECTION_SITTING.md P5_FIVE_NODE_REMEASUREMENT.md P6_HYPERVISOR_INVENTORY.md P7_TEST_C_ABSENT_INDEX.md P8_DISPROVED_STUBS.md PACK_INDEX.md 
+pack sha256 prefixes (12-char, informational; Sitting C freezes the full values itself):
+e532e6f21271...  P1_DEFERRAL_RECORD.md
+30ddb80ba283...  P2_RUNBOOK_BEFORE_AFTER.md
+4bcec3f82f08...  P3_2026-09-02_SITTING_NOTES.md
+402af346b562...  P4_2026-09-04_INJECTION_SITTING.md
+0d931845988a...  P5_FIVE_NODE_REMEASUREMENT.md
+cba24f7501a4...  P6_HYPERVISOR_INVENTORY.md
+0ccdb707d341...  P7_TEST_C_ABSENT_INDEX.md
+aa31c872f95e...  P8_DISPROVED_STUBS.md
+2217b27f6016...  PACK_INDEX.md
