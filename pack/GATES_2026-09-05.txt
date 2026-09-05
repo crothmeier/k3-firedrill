@@ -6,7 +6,7 @@ scope A = pack/ + README.md
   gate 3  K10<hex>:: token form                  : 0
 scope B = whole mirror excluding .git .scrub
   gate 1  identity grep (3.8 pattern)            : 0
-  gate 1i identity grep, case-insensitive subset : 0   (PROJECT_STATE.md:460 'Lazarus Labs' was 1 at e2e1187; edited this sitting)
+  gate 1i identity grep, case-insensitive subset : 0   (PROJECT_STATE.md:460 carried the site name, capitalised, at e2e1187; edited this sitting)
   gate 2  64-hex minus both allowlists           : 0
   gate 3  K10<hex>:: token form                  : 0
 allowlist 64-hex:

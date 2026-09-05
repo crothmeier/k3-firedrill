@@ -32,7 +32,7 @@ This file reproduces the hunks that matter to the claims: §1.6 (pre-staging rec
 +grep -lE '^(token|token-file):' /etc/rancher/k3s/config.yaml /etc/rancher/k3s/config.yaml.d/*.yaml 2>/dev/null   # exactly the ruled file, or nothing
  ```
 -`[unverified]` — pre-staging as a hard prerequisite is a derived control (both DRs); K3s doesn't document it. It is the core anti-⟦prior-rotation-incident⟧ move. Do NOT `daemon-reload`+restart yet.
-+Pre-staging as a hard prerequisite is a derived control (both DRs; K3s doesn't document it) — now **hardware-supported**: after the F-TA-4 fix (`4fda3de`, env-file surface) the harness pre-staged the env file, restarted in order, and produced clean rotations on 2026-09-02 (attempt 3 verified clean; attempt 4 the 7/7 PASS); before the fix, the same harness writing `server/token` reproduced the SEV-2. Do NOT `daemon-reload`+restart yet.
++Pre-staging as a hard prerequisite is a derived control (both DRs; K3s doesn't document it) — now **hardware-supported**: after the F-TA-4 fix (`4fda3de`, env-file surface) the harness pre-staged the env file, restarted in order, and produced clean rotations on 2026-09-02 (attempt 3 verified clean; attempt 4 the 7/7 PASS); before the fix, the same harness writing `server/token` reproduced the ⟦prior-rotation-incident⟧ failure. Do NOT `daemon-reload`+restart yet.
 ```
 
 **Why it mattered:** the v1.6 recipe assumed one uniform token source across all nodes and wrote a second one. On the rehearsal cluster (install-script provisioning, `K3S_TOKEN=` in `k3s.service.env`) the harness's own hook — modelled on the same assumption — wrote the new token to `server/token`, a file k3s regenerates from the env value at start. Server-2 restarted on the old credential and crash-looped (P3).

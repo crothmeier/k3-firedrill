@@ -1,0 +1,18 @@
+CS-5 Sitting C — F-C1/F-C4 substitution re-gate
+run: 2026-09-05T21:28:21Z  base: 825dba2 (working tree edited, uncommitted at run time)
+scope = whole mirror excluding .git, INCLUDING .scrub (F-C3 closed for this run)
+  gate 1  identity grep (3.8 pattern)   : 0
+  gate 1i identity grep, case-insens.  : 0
+  gate 2  64-hex minus allowlist        : 0
+  gate 3  K10<hex>:: token form         : 0
+edits: P2:35, P3:52 (F-C1), GATES_2026-09-05.txt:9 (F-C6), P8:41 (F-C4)
+pack sha256 prefixes (12-char; full values are frozen in the private records repo):
+e532e6f21271...  P1_DEFERRAL_RECORD.md
+561514f20378...  P2_RUNBOOK_BEFORE_AFTER.md
+2ce52f976e1f...  P3_2026-09-02_SITTING_NOTES.md
+402af346b562...  P4_2026-09-04_INJECTION_SITTING.md
+0d931845988a...  P5_FIVE_NODE_REMEASUREMENT.md
+cba24f7501a4...  P6_HYPERVISOR_INVENTORY.md
+0ccdb707d341...  P7_TEST_C_ABSENT_INDEX.md
+a947053967c3...  P8_DISPROVED_STUBS.md
+2217b27f6016...  PACK_INDEX.md
