@@ -12,7 +12,7 @@ The lab is five VMs on one hypervisor host: three servers (embedded etcd) and tw
 
 On 2026-09-02 the first hardware run executed my runbook's assumptions as then written and reproduced the outage the runbook exists to prevent: the harness wrote the new token into the file k3s regenerates at start, one server came back on the stale credential, and both register strings appeared in the predicted order while the other two servers kept quorum. I revised the runbook that day. Later the same night the clean rotation passed with an ordered rolling restart — the server that ran the rotate command restarted last — and every gate was re-measured by hand. On 2026-09-04 I planted a stale token on one server deliberately, watched it crash-loop while the other two held quorum and the API kept answering from the surviving server I was measuring from, confirmed that fixing the token source alone left five consecutive refusals, deleted exactly the two files, and had the server back in service in 45 seconds. Six harness rollbacks restored the baseline six times, including once from a crash-looping control plane.
 
-The production credential is still unrotated, under a dated, written deferral I authored. The clean-rotation and single-node failure-injection tests passed; the quorum-loss test is next. Nothing about this is complete.
+The production credential is still unrotated, under a dated, written deferral I ratified and signed. The clean-rotation and single-node failure-injection tests passed; the quorum-loss test ran on 2026-09-06 and passed, after this snapshot was cut — its sub-case C.4 (snapshot recovery) has still not run. Nothing about this is complete.
 
 ## Architecture
 

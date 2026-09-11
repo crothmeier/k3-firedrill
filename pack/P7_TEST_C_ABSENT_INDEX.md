@@ -1,4 +1,6 @@
-# P7 — Index proving Test (c) has not run
+# P7 — Index proving Test (c) had not run when this pack was assembled (2026-09-05)
+
+> **UPDATE 2026-09-06 — test (c) has since run.** This file is retained exactly as assembled on 2026-09-05 and remains the accurate record of the state it describes; the statements of absence below were true when written and are **not** amended. On 2026-09-06 test (c) ran and **PASSED** — quorum loss was induced and measured, and all three servers rejoined on the new credential (`EXEC_LOG_2026-09-06_P06_TEST_C.md`, Nexus `486b100`). Sub-case **C.4 (snapshot recovery) remains NOT RUN**.
 
 The rehearsal gate (P1, condition 1: "P0.6 PASS per runbook §0 — all boxes") has three tests. Two have run. This file collects, verbatim and dated, every place the record says the third has not.
 
@@ -6,7 +8,7 @@ The rehearsal gate (P1, condition 1: "P0.6 PASS per runbook §0 — all boxes") 
 |---|---|---|---|
 | (a) | clean rotation with ordered rolling restart | **PASS 2026-09-02** | P3, note 2 |
 | (b) | one server restarted on the stale credential; Branch B recovery incl. the timestamp-trap delete | **PASS 2026-09-04** | P4 |
-| (c) | quorum loss — two servers restarted on the stale credential; Branch C recovery, plus sub-cases C.3 / C.4 | **NOT RUN** | below |
+| (c) | quorum loss — two servers restarted on the stale credential; Branch C recovery, plus sub-cases C.3 / C.4 | **NOT RUN at assembly (2026-09-05)** · ran and **PASSED 2026-09-06**, C.3 PASS, **C.4 still not run** — see update above | below |
 
 ---
 
@@ -41,5 +43,5 @@ The rehearsal gate (P1, condition 1: "P0.6 PASS per runbook §0 — all boxes") 
 ## What "not run" means for the claims in this pack
 
 - Nothing in P3–P5 depends on test (c). The clean rotation and the single-node failure-injection are complete, independently re-measured sittings.
-- No claim of a rehearsed **quorum-loss recovery** is made anywhere in this pack or in the mirror's README. Branch C of the runbook is source-pinned but not hardware-exercised.
+- No claim of a rehearsed **quorum-loss recovery** is made anywhere in this pack as assembled, nor was one made in the mirror's README before 2026-09-11. At assembly, Branch C of the runbook was source-pinned but not hardware-exercised; it was exercised on 2026-09-06 (see the update at the top of this file).
 - Production rotation therefore remains deferred (P1). Test (c) is scheduled as its own sitting after this pack; its result will be a separate dated log.

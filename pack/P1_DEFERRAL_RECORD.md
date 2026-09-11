@@ -28,5 +28,5 @@
 ## What this establishes for the reader
 
 - The production credential the runbook rotates was **still unrotated** on 2026-08-28 by a written, dated, ratified decision, and remains so at the time of this pack (2026-09-05) — P0.6 is not yet PASS in full (test (c) has not run; see P7).
-- "P0.6" is the rehearsal gate this pack documents: test (a) clean rotation (P3), test (b) failure injection and recovery (P4), test (c) quorum-loss recovery (not run, P7).
+- "P0.6" is the rehearsal gate this pack documents: test (a) clean rotation (P3), test (b) failure injection and recovery (P4), test (c) quorum-loss recovery (not run at assembly; ran and passed 2026-09-06 — P7 update).
 - The review boundary is 2026-10-15.

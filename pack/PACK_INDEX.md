@@ -16,7 +16,7 @@ Assembled 2026-09-05 from committed, already-redacted execution logs and decisio
 | Two specific on-disk files were newer than the datastore; deleting exactly those two recovered it in 45 seconds | P4 b3, §2, P4e | 45 s = `stop` at 11:21:58Z → `active` at 11:22:43Z, includes 35 s of operator steps; Ready ≤65 s is a polling bound |
 | Every result was re-measured by hand, independently of the harness | P5 | Two passes; the second on a cold boot with the harness unused; evidence file sha256 pinned |
 | Three control-plane VMs on one host | P6 | one host / kernel / storage pool measured; "one power domain" asserted; the open-questions file does not yet carry the line |
-| Test (c) — quorum-loss recovery — has not run | P7 | rotation therefore not execution-ready |
+| Test (c) — quorum-loss recovery — had not run when this pack was assembled | P7 | ran and PASSED 2026-09-06, after assembly (P7 update); sub-case C.4 still not run; rotation still not execution-ready |
 | Four stubs modelled external tools wrongly and were disproven on hardware | P8 | samples exist beside exactly those four; `mock_model.py` not yet inventoried |
 
 ## Files
