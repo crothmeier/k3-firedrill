@@ -9,7 +9,7 @@ Assembled 2026-09-05 from committed, already-redacted execution logs and decisio
 | Claim (as it appears on the project's summary page) | Where it is checkable | Limit stated in the pack |
 |---|---|---|
 | The production credential is unrotated under a dated, written, ratified deferral | P1 | Amendment v1.1 never ratified; not cited |
-| On 2026-09-02 the runbook, executed as then written, reproduced the outage it exists to prevent; it was then revised | P3 note 1; P2 hunks 1–2 | The harness reproduced the *mechanism* and the runbook's two pinned strings; identity with any specific production incident is not claimed |
+| On 2026-09-02 the first rehearsed execution of the runbook reproduced the outage it exists to prevent; the runbook was revised that day | P3 note 1; P2 hunks 1–2 | **Agency:** the harness — not a runbook step — wrote the credential to the surface this install does not read from; the runbook's own source-pinned strings predicted the resulting failure verbatim, and its §1.6 drop-in recipe contributed a second disagreeing surface, withdrawn at v1.7. Identity with any specific production incident is not claimed |
 | Then a clean rotation passed with an ordered rolling restart | P3 note 2 | Two clean rotations that night (attempts 3, 4); the second is the harness-certified 7/7 |
 | On 2026-09-04 a stale credential planted on one of three servers crash-looped that server while the other two held quorum | P4 b1, P4b | API-served observation from **one** surviving server; the third proven at the etcd layer + unit active; all inside one failure domain (P6) |
 | Fixing the credential source alone was not enough | P4 b2 | five refusals on the correct token |
