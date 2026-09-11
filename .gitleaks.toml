@@ -1,0 +1,8 @@
+# .gitleaks.toml — k3-firedrill public repo
+# Drafted by Operation_Dossier 2026-09-11 (FINDINGS_K3FIREDRILL_GATE_2026-09-11.md §2, §7 item 3).
+# Extends the gitleaks default ruleset unchanged. Known non-secret fixtures are excluded
+# by fingerprint in .gitleaksignore, not by loosening rules here.
+title = "k3-firedrill secret scan"
+
+[extend]
+useDefault = true

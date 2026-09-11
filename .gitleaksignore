@@ -1,0 +1,10 @@
+# .gitleaksignore — adjudicated false positives, k3-firedrill public repo
+# Source: Operation_Dossier FINDINGS_K3FIREDRILL_GATE_2026-09-11.md §2 (gitleaks full-history run,
+# rule generic-api-key). Both values are 32-hex redaction-test inputs (BARE_TOKEN), identical
+# blobs in the private working repo, absent from every records file. Not credentials.
+# git-scan fingerprints (commit:path:rule:line)
+e2e1187c7f2813429026e6872776c8e85edb7818:tests/test_evidence.py:generic-api-key:15
+e2e1187c7f2813429026e6872776c8e85edb7818:tests/test_redact.py:generic-api-key:9
+# dir-scan fingerprints (path:rule:line)
+tests/test_evidence.py:generic-api-key:15
+tests/test_redact.py:generic-api-key:9
