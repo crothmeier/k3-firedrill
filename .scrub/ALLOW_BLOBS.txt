@@ -1,0 +1,31 @@
+# cs5-allow-blobs.txt — blob-digest allowlist for scripts/cs5-sitting-a-mirror-cut.sh
+#
+# One entry per line: <sha256 of the file's CURRENT bytes in the public tree>  <path relative to the tree root>
+# Exempts that exact blob from gates 2 and 4a–4i ONLY. Gates 1, 1i and 3 are never allowlisted.
+# Any later edit to an allowlisted file changes its digest and re-trips the gate until it is
+# re-reviewed and re-pinned here — allowlisting is by provenance, never by matched string (F-C6).
+#
+# How an entry gets here: the script prints "to allow (only if reviewed as fixture/evidence): <sha>  <path>"
+# on a FAIL; the operator reviews the hit, confirms it is fixture data or an already-ruled evidence form,
+# and pastes the line. Record the reason as a trailing comment line above the entry.
+#
+# D-2 (ruled 2026-09-07, P40 row 9): 12-hex derived names/digests of LAB-ONLY credentials (bootstrap key
+# names, server/token digests, CA prefix/suffix) are a permitted evidence form. They have no regex gate;
+# their shape equals a git short hash. The same shape derived from a PRODUCTION credential is a REJECT
+# at adjudication. Nothing in this file is needed for D-2 — it is recorded here so the rule travels with
+# the allowlist. Anything below this line was reviewed against a4c675d or later.
+#
+# (empty at revision 2026-09-07 — the first `--gate-ref a4c675d` run after this revision populates it)
+
+# ---- cut #2 (source 1da3e47, 2026-09-12) — reviewed by the assembler session; adjudicator re-reviews
+# before push. Reasons name gate + file:line only (F-C6: never quote the matched string).
+# gate 4f — a variable NAME at :67, no fixture data
+daf3848ef7643f562ecf94dad89b7b9705bbf98ce995849c59046d1799cb3391  lib/drivers/pve.sh
+# gate 4a — two module-level test-fixture constants :13-14; same blob adjudicated in .gitleaksignore 2026-09-11
+2432d303ecd317fc282ee9891e365f55f72b73214336e35c3b3a80b70f543814  tests/test_evidence.py
+# gate 4a — fixture constants :154-155 and a fixture bootstrap-token-shaped literal :860; gate 4f — a config variable NAME :35
+4f54090e2e377db44e3c758004d93efb5f681db5b8f37cb48c93813691df804f  tests/test_pve_driver.sh
+# gate 4a — two module-level test-fixture constants :7-8; same blob adjudicated in .gitleaksignore 2026-09-11
+0d3f4adfe0c8da93f0ca523012ee16410aeaf7ad088ce5e594c2c741725cb4b4  tests/test_redact.py
+# gate 4a — three in-test fixture literals :167, :217, :398
+4bdf9eeafc41cd40fcbd5bed824ff3051976e9d57ab534c3fc4d3b5fbf8158fc  tests/test_test_c.py

@@ -1,5 +1,6 @@
-source: k3-firedrill 11748cc
-cut   : 2026-09-04T23:19:40Z
-lines scrubbed: 16
-gates: identity=0 hex64=0 k10=0
-allowlist64: e8e2170d8d83...
+source: k3-firedrill 1da3e47
+cut   : 2026-09-12T01:47:04Z
+lines scrubbed: 32
+gates: identity=0 identity_ci=0 hex=0 k10=0 4a=0 4b=0 4c=0 4e=0 4f=0 4g=0 4h=0 4i=0 warn4d=31   (scope: whole tree incl. .scrub; allowlist by blob digest, see ALLOW_BLOBS.txt)
+allowlist64: e8e2170d8d83... 40d6b4a1a6e0...
+pins  : see PINS.txt (D-1 admitted docs, post-scrub)

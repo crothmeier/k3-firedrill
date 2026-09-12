@@ -1,0 +1,6 @@
+# post-scrub sha256 of every D-1 admitted doc at this cut (source 1da3e47). Verify after push:
+#   scripts/cs5-sitting-a-mirror-cut.sh --gate-ref origin/main --pins .scrub/PINS.txt   (F-C8: never $0 — a seat path in a shipped blob trips gates 1/4g post-push)
+d898cffc7813d615c95afd71695a637d2c384cacc4b9a865057b187b1711d015  docs/OPEN_QUESTIONS.md
+70f7c6bdf1e9f1d4c6f42a63655b6fcf60286da8200c36c24b92cc6e32b02947  docs/TEST_SPEC.md
+e2ec09214b51a61dc30d347add279b3042884df8a052c5e189fb01f1aaf27011  docs/GUEST_ARTIFACT_STAGING.md
+37eec0d784225bf8ae408144374a8588a04caed9a66460b9e2bcdfda1048fbb5  docs/STUB_INVENTORY_2026-09-05_MOCK_MODEL.md

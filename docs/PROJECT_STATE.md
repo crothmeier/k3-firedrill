@@ -1,8 +1,14 @@
 # PROJECT_STATE — k3-firedrill
 
-Snapshot date: 2026-09-04, HEAD `ba90be8` — **TEST (a) PASSED on
-lab-hv01 at `e4b9fbe` (attempt 4, 09:00–09:02Z, 7/7, EXIT=0,
-independently verified).** F-TA-6/F-TBC-1 is included in the measured HEAD.
+Snapshot date: 2026-09-12 (state refresh; authoring cut at HEAD `ce1739b`) —
+**P0.6 standing: TEST (a) PASS (2026-09-02, `e4b9fbe`, 7/7, EXIT=0) · TEST (b)
+PASS (2026-09-04, manual annex §A4) · TEST (c) PASS + C.3 PASS + C.5 PASS
+(2026-09-06 evening EDT / 09-07 02:20–03:50Z, manual annex §A5) · C.4 NOT
+RUN — the one remaining P0.6 unit.** Harness code unchanged since `ba90be8`;
+`test-b` / `test-c` / `test-all` hooks still exit 69 by design (the B/C
+bodies are manual-annex sittings, evidence in Nexus). Nothing here
+establishes P0.1, P0.7, P0.8, VIP behaviour, or authorization to rotate
+production.
 Authority: Claude (Fable 5.1) primary 2026-09-04; Codex executor available
 to 2026-09-17, per-item dispatch.
 Owner: this file is the successor-agnostic state of record for any
@@ -211,6 +217,34 @@ live command output and `git log` over anything here that has aged.
 - F-TB-4 — PVE "Bulk start" reported OK and started nothing (05:04:45 EDT
   09-04, all five guests still stopped at 11:11Z); repeat of the 09-01
   finding, reproduced ×2. Standing rule: individual `qm start`.
+- F-TC-1 — a single etcd member snapshot-rolled-back into a LIVE cluster
+  panics on every start (raft v3.6.0 `log.go:324` via `handleHeartbeat`:
+  `panic: tocommit(102682) is out of range [lastIndex(97546)]`; NRestarts
+  17→23 in ~3 min; quorum 2/3 held). Rollback #7 (R4's one-VM
+  interpretation) FAIL 09-07 02:31:50Z. etcd's contract is remove + re-add
+  with a fresh data dir, never restart from stale disk. Annex §A6 erratum:
+  the per-guest leg is valid only when all three etcd members are rolled
+  back together. Recovery = rollback #8 (five together, manual) PASS
+  02:39:14Z. The six prior PASS rollbacks all restored the five guests as a
+  set — the harness leg is the proven restore path.
+- F-TC-2 — after `k3s token rotate` on srv-1, srv-1's own ruled source
+  (`K3S_TOKEN=` in `k3s.service.env`) is still OLD. ~20 s after the second
+  peer died, srv-1's in-process controller-manager lost its lease
+  (`leaderelection lost`), k3s exited 1, systemd restarted it, and it failed
+  `bootstrap data already found and encrypted with different token` on its
+  own source — same class as the peers. Parent §5.2 step 7 cannot succeed
+  as written; the step-8 source fix is scoped to srv-2/3 only. Parent-text
+  gap, not a lab fault. Fix proven 02:58:39Z; reproduced on the C.3 cycle.
+- F-TC-3 — the C.0 unquorate read is unreachable on this lab: with the
+  rotating node crash-looping on its stale source no etcd listener
+  (2379/2380/loopback 2399) ever binds, and after the source fix a lone
+  member still served no read within 180 s. C.0 = NOT OBSERVED PRE-RESET on
+  the (c) cycle; taken post-rotate / pre-induce on the C.3 cycle instead.
+  Annex §A5 erratum: C.0's observation must be taken before inducing.
+- F-TB-3 confirmed 4/4 on the (c)/C.3 path (MANIFESTED ×2 per cycle); the
+  annex §A5 step-8 two-path delete is unconditional (erratum candidate).
+  Source for all F-TC rows: Nexus `EXEC_LOG_2026-09-06_P06_TEST_C.md`
+  (`486b100`) §1, §3.2, §4, §7.
 
 ## F-TA-6 / F-TBC-1 repair closeout evidence (UNCOMMITTED 2026-09-02)
 
@@ -431,7 +465,29 @@ stub/offline only until that gate runs.
    **Six harness rollbacks, six PASS** (rollback #6 verified independently
    11:28:12Z). Findings: F-TB-1, F-TB-2, F-TB-3, F-TB-4. Source: Nexus
    `EXEC_LOG_2026-09-04_P06_TEST_B.md` at `48b4fb6`.
-0. **Test (c) NOT RUN.**
+0. **TEST (c) PASS · C.3 PASS · C.5 PASS (seat) — 2026-09-06 evening EDT /
+   09-07Z.** Manual annex §A5 on the `lab-hv01` rehearsal cluster
+   7100–7104. (c): quorum loss induced and MEASURED 02:42Z; C.2 Form 2
+   exit 0 02:58:27Z with the `reset-flag` lifecycle observed; all three
+   servers rejoined on NEW; C.6 asserted in full 03:04:33Z (wall
+   02:40:44Z → 03:04:33Z, ~9 min of it C.0 read attempts). C.3: WRONG-token
+   reset stranded the flag (written 2 s in, before the token check);
+   immediate correct retry REFUSED, refusal string pinned verbatim;
+   exact-path `rm` → reset exit 0 → recovery → C.6 03:50:08Z. C.5
+   named-arm assertion 02:20:06Z (seat only). **Rollbacks: #7 one-VM FAIL
+   (F-TC-1) · #8 five-together manual PASS · #9 and #10 harness PASS from
+   post-reset states, each independently re-verified.** Findings: F-TC-1,
+   F-TC-2, F-TC-3; F-TB-3 confirmed 4/4; three erratum candidates (annex
+   §A6 scope, parent §5.2 srv-1 source step, annex §A5 step-8 delete +
+   C.0 placement) — NOT yet folded into the annex/parent. Cold `vzdump` of
+   the baseline set taken and copied off-host. Source: Nexus
+   `EXEC_LOG_2026-09-06_P06_TEST_C.md` at `486b100`.
+0. **C.4 NOT RUN** (two-key orphan + Save-refusal) — §6 fatigue rule after
+   C.3, operator 09-07 03:50Z. Its own sitting; prompt must import as
+   known beats: the F-TC-2 srv-1 source fix, the unconditional §A5 step-8
+   delete (F-TB-3), post-rotate C.0 observation (F-TC-3), individual
+   `qm start` (F-TB-4), rollback via harness from post-reset state
+   (#9/#10) — never one-VM (F-TC-1).
 1. History — **Test (a) attempt 3 (08:16Z, `ef6d921`): SUBSTANTIVELY PASSED** —
    rotation, five ordered healthy restarts (hold-out server-1 last, 16 s),
    zero decryption failures, one new key, CA unchanged, all verified
@@ -457,13 +513,28 @@ stub/offline only until that gate runs.
    gated on one routing measurement (its §1).
 5. Real test-b / test-c hook bodies — fail-closed at exit 69 by design;
    need a future dispatch after test-a experience.
-6. Exec-log evidence for the private records repo (Nexus) covering
+6. Exec-log evidence for the private records repo covering
    the 2026-08-30 provisioning day.
+7. **Public mirror does not auto-follow.** The curated mirror
+   (`k3-firedrill-public`, GitHub `k3-firedrill`) was cut from this repo
+   at `11748cc` and published with its evidence pack on 2026-09-05. Edits
+   here after `11748cc` (first: `docs/OPEN_QUESTIONS.md` "Single failure
+   domain", owed by pack P6) reach the mirror only through the next
+   curated cut with its own gate record — never an out-of-band push.
 
 ## Lab power state
 
-**CURRENT 2026-09-04 ~11:30Z: five guests 7100–7104 at `p06-baseline`;
-`lab-hv01` powered off.**
+**CURRENT (last measured 2026-09-10 ~22:00Z, Nexus
+`EXEC_LOG_2026-09-10_B1_DROPIN_PROBE.md` §6): five guests 7100–7104 at
+`p06-baseline` after harness rollback + independent re-verify; `lab-hv01`
+powered off. Unverified since.**
+
+**2026-09-07 04:08:53Z (test (c) sitting close): five clean shutdowns,
+`p06-baseline` ×5, re-verify PASS 04:07:27Z, `poweroff`. Cold `vzdump` ×6
+of the baseline set to `local`, copied off-host to
+`~/lab-backups/p06-baseline-2026-09-07/` (USB durable copy still owed).**
+
+2026-09-04 ~11:30Z: five guests at `p06-baseline`; host powered off.
 
 **2026-09-02 ~05:10 EDT: fifth harness rollback (`rb5`, post test-a
 PASS) — result recorded in Nexus `EXEC_LOG_2026-09-02_P06_TEST_A_PASS.md`
